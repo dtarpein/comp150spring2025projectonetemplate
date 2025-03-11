@@ -1,0 +1,29 @@
+[
+    {
+        "type": "combat",
+        "primary_attribute": "strength",
+        "prompt_text": "A Boiler Beast lumbers forth, steam billowing from its vents!",
+        "pass": {"message": "You smash the Boiler Beast! Reward: Core Fragment"},
+        "fail": {"message": "The Boiler Beast scalds you, dealing 5 damage!"},
+        "reward": "Core Fragment",
+        "penalty": 5,
+        "enemy": {"name": "Boiler Beast", "vitality": 15, "strength": 3, "dexterity": 4}
+    },
+    {
+        "type": "puzzle",
+        "primary_attribute": "intelligence",
+        "prompt_text": "A series of valves must be turned in the correct order.",
+        "pass": {"message": "You turn the valves correctly! Reward: Goggles"},
+        "fail": {"message": "The valves misfire, dealing 3 damage!"},
+        "reward": "Goggles",
+        "penalty": 3
+    },
+    {
+        "type": "loot",
+        "primary_attribute": "dexterity",
+        "prompt_text": "A rusty crate yields something useful.",
+        "pass": {"message": "You pry open the crate! Reward: Canteen"},
+        "fail": {"message": "The crate resists your efforts."},
+        "reward": "Canteen"
+    }
+]

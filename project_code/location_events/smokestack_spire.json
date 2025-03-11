@@ -1,0 +1,29 @@
+[
+    {
+        "type": "combat",
+        "primary_attribute": "dexterity",
+        "prompt_text": "A Clockwork Vulture swoops down, gears whirring!",
+        "pass": {"message": "You outmaneuver and down the Vulture! Reward: Core Fragment"},
+        "fail": {"message": "The Vulture claws you, dealing 4 damage!"},
+        "reward": "Core Fragment",
+        "penalty": 4,
+        "enemy": {"name": "Clockwork Vulture", "vitality": 12, "strength": 2, "dexterity": 7}
+    },
+    {
+        "type": "puzzle",
+        "primary_attribute": "intelligence",
+        "prompt_text": "A control panel flickers, demanding a quick calculation.",
+        "pass": {"message": "You solve the panel! Reward: Steam Pistol"},
+        "fail": {"message": "The panel shocks you, dealing 4 damage!"},
+        "reward": "Steam Pistol",
+        "penalty": 4
+    },
+    {
+        "type": "loot",
+        "primary_attribute": "dexterity",
+        "prompt_text": "You find a satchel wedged between pipes.",
+        "pass": {"message": "You retrieve the satchel! Reward: Goggles"},
+        "fail": {"message": "The satchel slips from your grasp."},
+        "reward": "Goggles"
+    }
+]

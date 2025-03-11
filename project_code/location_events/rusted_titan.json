@@ -1,0 +1,37 @@
+[
+  {
+      "type": "combat",
+      "primary_attribute": "strength",
+      "prompt_text": "A Steam Scorpion scuttles from the shadows, claws snapping!",
+      "pass": {"message": "You crush the Steam Scorpion with brute force! Reward: Core Fragment"},
+      "fail": {"message": "The Steam Scorpion overpowers you, dealing 5 damage!"},
+      "reward": "Core Fragment",
+      "penalty": 5,
+      "enemy": {"name": "Steam Scorpion", "vitality": 10, "strength": 2, "dexterity": 6}
+  },
+  {
+      "type": "puzzle",
+      "primary_attribute": "intelligence",
+      "prompt_text": "A locked gear mechanism requires precise alignment.",
+      "pass": {"message": "You align the gears perfectly! Reward: Canteen"},
+      "fail": {"message": "The mechanism jams, dealing 3 damage!"},
+      "reward": "Canteen",
+      "penalty": 3
+  },
+  {
+      "type": "loot",
+      "primary_attribute": "dexterity",
+      "prompt_text": "You uncover a hidden compartment in the wreckage.",
+      "pass": {"message": "You deftly open the compartment! Reward: Steam Pistol"},
+      "fail": {"message": "You fumble and find nothing."},
+      "reward": "Steam Pistol"
+  },
+  {
+      "type": "recruit",
+      "primary_attribute": "intelligence",
+      "prompt_text": "A wounded Gearshot stumbles from the debris, seeking aid.",
+      "pass": {"message": "You convince the Gearshot to join your party!"},
+      "fail": {"message": "The Gearshot distrusts you and leaves."},
+      "recruit": {"name": "Jace", "class": "Gearshot", "initial_vitality": 8}
+  }
+]
