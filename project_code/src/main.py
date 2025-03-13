@@ -1,7 +1,7 @@
 import json
 import sys
 import random
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from enum import Enum
 
 class EventStatus(Enum):
@@ -35,6 +35,7 @@ class Character:
         self.set_base_stats()
         self.randomize_stats()
         self.max_vitality = self.vitality.value  # Track max for healing
+        self.inventory = []  # Track items collected
 
     def set_base_stats(self):
         """Set base stats based on class type."""
@@ -62,89 +63,220 @@ class Character:
         """Check if character is alive."""
         return self.vitality.value > 0
 
+    def add_to_inventory(self, item: str):
+        """Add an item to the character's inventory."""
+        self.inventory.append(item)
+        
     def __str__(self):
         return (f"Character: {self.name} ({self.class_type}), "
-                f"STR {self.strength}, DEX {self.dexterity}, "
-                f"VIT {self.vitality}/{self.max_vitality}, INT {self.intelligence}")
+                f"STR {self.strength.value}, DEX {self.dexterity.value}, "
+                f"VIT {self.vitality.value}/{self.max_vitality}, INT {self.intelligence.value}")
 
     def get_stats(self):
+        """Return a list of the character's stats."""
         return [self.strength, self.dexterity, self.vitality, self.intelligence]
 
+class Enemy:
+    """Represents an enemy with basic combat stats."""
+    def __init__(self, name: str, vitality: int, strength: int, dexterity: int):
+        self.name = name
+        self.vitality = vitality
+        self.strength = strength
+        self.dexterity = dexterity
+
+    def take_damage(self, damage: int):
+        """Reduce vitality by damage amount."""
+        self.vitality -= damage
+        if self.vitality < 0:
+            self.vitality = 0
+
+    def is_alive(self) -> bool:
+        """Check if enemy is alive."""
+        return self.vitality > 0
+
+    def display_stats(self) -> str:
+        """Return formatted stats string."""
+        return f"{self.name}: Vitality {self.vitality}, Strength {self.strength}, Dexterity {self.dexterity}"
+
 class Event:
+    """Represents an in-game event with resolution logic."""
     def __init__(self, data: dict):
         self.type = data.get("type", "default")
-        self.primary_attribute = data['primary_attribute']
-        self.secondary_attribute = data.get('secondary_attribute')
-        self.prompt_text = data['prompt_text']
-        self.pass_message = data['pass']['message']
-        self.fail_message = data['fail']['message']
+        self.primary_attribute = data.get('primary_attribute', "")
+        self.secondary_attribute = data.get('secondary_attribute', "")
+        self.prompt_text = data.get('prompt_text', "")
+        self.pass_message = data.get('pass', {}).get('message', "")
+        self.fail_message = data.get('fail', {}).get('message', "")
         self.partial_pass_message = data.get('partial_pass', {}).get('message', "")
-        self.reward = data.get('reward')
+        self.reward = data.get('reward', "")
         self.penalty = data.get('penalty', 0)
-        self.recruit = data.get('recruit')
-        self.enemy = data.get('enemy')
+        self.recruit = data.get('recruit', None)
+        self.enemy = data.get('enemy', None)
         self.status = EventStatus.UNKNOWN
 
-    def execute(self, party: List[Character], parser):
+    def execute(self, party: List[Character], parser=None) -> bool:
+        """Execute the event based on its type."""
         print(f"\n{self.prompt_text}")
-        if self.type == "combat":
-            character = parser.select_party_member(party)
-            if character and self.resolve_combat(character, party):
-                self.status = EventStatus.PASS
-                print(self.pass_message)
-                if self.reward:
-                    print(f"Reward: {self.reward}")
-            else:
-                self.status = EventStatus.FAIL
-                print(self.fail_message)
-                if not character.is_alive():
-                    party.remove(character)
-                    print(f"{character.name} has been lost!")
-        elif self.type == "puzzle":
-            character = parser.select_party_member(party)
-            if character and self.resolve_puzzle(character):
-                self.status = EventStatus.PASS
-                print(self.pass_message)
-                if self.reward:
-                    print(f"Reward: {self.reward}")
-            else:
-                self.status = EventStatus.FAIL
-                print(self.fail_message)
-                if self.penalty:
-                    character.take_damage(self.penalty)
-                    print(f"{character.name} takes {self.penalty} damage!")
-                    if not character.is_alive():
-                        party.remove(character)
-                        print(f"{character.name} has been lost!")
-        elif self.type == "loot":
+        
+        # Dictionary maps event types to handler methods
+        event_handlers = {
+            "combat": self._handle_combat,
+            "puzzle": self._handle_puzzle,
+            "loot": self._handle_loot,
+            "recruit": self._handle_recruit,
+            "boss": self._handle_boss
+        }
+        
+        # Get the appropriate handler for this event type
+        handler = event_handlers.get(self.type)
+        if handler:
+            return handler(party, parser)
+        
+        return False
+    
+    def _handle_combat(self, party, parser):
+        """Handle a combat event."""
+        # Select character - use parser if provided, otherwise select directly
+        character = self._select_party_member(party, parser)
+        if not character:
+            return False
+
+        if self.resolve_combat(character, party, parser):
             self.status = EventStatus.PASS
             print(self.pass_message)
             if self.reward:
                 print(f"Reward: {self.reward}")
-        elif self.type == "recruit":
+                if hasattr(character, 'add_to_inventory'):
+                    character.add_to_inventory(self.reward)
+            return True
+        else:
+            self.status = EventStatus.FAIL
+            print(self.fail_message)
+            if character and not character.is_alive():
+                party.remove(character)
+                print(f"{character.name} has been lost!")
+            return False
+    
+    def _handle_puzzle(self, party, parser):
+        character = self._select_party_member(party, parser)
+        if not character:
+            return False
+            
+        if self.resolve_puzzle(character):
             self.status = EventStatus.PASS
-            choice = parser.parse("Recruit this survivor? 1. Yes 2. No\n> ")
-            if choice == "1":
-                new_char = Character(self.recruit["name"], self.recruit["class"])
-                new_char.vitality.value = self.recruit["initial_vitality"]
-                party.append(new_char)
-                print(self.pass_message)
-            else:
-                print("You leave the survivor behind.")
-        elif self.type == "boss":
-            if self.resolve_boss(party):
-                self.status = EventStatus.PASS
-                print(self.pass_message)
-            else:
-                self.status = EventStatus.FAIL
-                print(self.fail_message)
+            print(self.pass_message)
+            if self.reward:
+                print(f"Reward: {self.reward}")
+                if hasattr(character, 'add_to_inventory'):
+                    character.add_to_inventory(self.reward)
+            return True
+        else:
+            self.status = EventStatus.FAIL
+            print(self.fail_message)
+            if self.penalty:
+                character.take_damage(self.penalty)
+                print(f"{character.name} takes {self.penalty} damage!")
+                if not character.is_alive():
+                    party.remove(character)
+                    print(f"{character.name} has been lost!")
+            return False
+    
+    def _handle_loot(self, party, parser):
+        character = self._select_party_member(party, parser)
+        if not character:
+            return False
+        
+        self.status = EventStatus.PASS
+        print(self.pass_message)
+        if self.reward:
+            print(f"Reward: {self.reward}")
+            if hasattr(character, 'add_to_inventory'):
+                character.add_to_inventory(self.reward)
+        return True
+    
+    def _handle_recruit(self, party, parser):
+        self.status = EventStatus.PASS
+        prompt = "Recruit this survivor? 1. Yes 2. No\n> "
+        
+        choice = self._get_input(prompt, parser)
+        if choice == "1" and self.recruit:
+            new_char = Character(self.recruit["name"], self.recruit["class"])
+            new_char.vitality.value = self.recruit["initial_vitality"]
+            party.append(new_char)
+            print(self.pass_message)
+            return True
+        else:
+            print("You leave the survivor behind.")
+            return False
+    
+    def _handle_boss(self, party, parser):
+        if self.resolve_boss(party, parser):
+            self.status = EventStatus.PASS
+            print(self.pass_message)
+            return True
+        else:
+            self.status = EventStatus.FAIL
+            print(self.fail_message)
+            return False
+    
+    def _get_input(self, prompt, parser=None):
+        """Get input using parser if available, otherwise use direct input."""
+        if parser:
+            return parser.parse(prompt)
+        return input(prompt)
+    
+    def _select_party_member(self, party, parser=None):
+        """Select a party member using parser if available, else select directly."""
+        if not party:
+            print("No party members left!")
+            return None
+        
+        if parser:
+            return parser.select_party_member(party)
+        
+        print("Choose a party member:")
+        for idx, member in enumerate(party):
+            print(f"{idx + 1}. {member}")
+            
+        while True:
+            try:
+                choice = int(input("Enter the number of the chosen party member: ")) - 1
+                if 0 <= choice < len(party):
+                    return party[choice]
+                print("Invalid choice. Try again.")
+            except ValueError:
+                print("Please enter a valid number.")
+                
+    def resolve_choice(self, character: Character, chosen_stat: Statistic):
+        """Resolve event based on chosen statistic."""
+        if chosen_stat.name.lower() == self.primary_attribute.lower():
+            self.status = EventStatus.PASS
+            print(self.pass_message)
+            return True
+        elif self.secondary_attribute and chosen_stat.name.lower() == self.secondary_attribute.lower():
+            self.status = EventStatus.PARTIAL_PASS
+            print(self.partial_pass_message)
+            return True
+        else:
+            self.status = EventStatus.FAIL
+            print(self.fail_message)
+            return False
 
-    def resolve_combat(self, character: Character, party: List[Character]) -> bool:
-        enemy = Enemy(self.enemy["name"], self.enemy["vitality"], self.enemy["strength"], self.enemy["dexterity"])
+    def resolve_combat(self, character: Character, party: List[Character], parser=None) -> bool:
+        """Resolve a combat event."""
+        if not self.enemy:
+            print("No enemy information available!")
+            return False
+            
+        enemy = Enemy(self.enemy["name"], self.enemy["vitality"], 
+                      self.enemy["strength"], self.enemy["dexterity"])
         print(f"\n{character.name} engages {enemy.name}!")
+        
         while character.is_alive() and enemy.is_alive():
+            action = self._get_input("1. Attack 2. Flee\n> ", parser)
             
             if action == "1":
+                # Attack
                 hit_chance = 50 + (character.dexterity.value - enemy.dexterity) * 5
                 if random.randint(1, 100) <= hit_chance:
                     damage = character.strength.value + random.randint(1, 6)
@@ -153,6 +285,7 @@ class Event:
                 else:
                     print(f"{character.name}'s attack misses!")
             elif action == "2":
+                # Flee
                 if random.randint(1, 100) <= 50 + character.dexterity.value:
                     print(f"{character.name} flees successfully!")
                     return False
@@ -165,32 +298,67 @@ class Event:
                     damage = enemy.strength + random.randint(1, 6)
                     character.take_damage(damage)
                     print(f"{enemy.name} hits {character.name} for {damage} damage!")
+                    print(f"{character.name}'s vitality: {character.vitality.value}/{character.max_vitality}")
                 else:
                     print(f"{enemy.name}'s attack misses!")
 
         return enemy.vitality <= 0
 
     def resolve_puzzle(self, character: Character) -> bool:
-        roll = random.randint(1, 6) + getattr(character, self.primary_attribute.lower()).value
-        return roll >= 10  # Threshold for puzzle success
+        """Resolve a puzzle event with a stat check."""
+        print(f"This puzzle requires {self.primary_attribute}.")
+        print(f"{character.name}'s {self.primary_attribute}: {getattr(character, self.primary_attribute.lower()).value}")
+        print("Rolling dice...")
+        
+        roll = random.randint(1, 6)
+        print(f"Rolled: {roll}")
+        
+        total = roll + getattr(character, self.primary_attribute.lower()).value
+        print(f"Total (roll + {self.primary_attribute}): {total}")
+        
+        threshold = 10
+        print(f"Need {threshold} or higher to succeed.")
+        
+        return total >= threshold
 
-    def resolve_boss(self, party: List[Character]) -> bool:
+    def resolve_loot(self, character: Character) -> bool:
+        """Resolve a loot event with a dexterity check."""
+        print(f"This requires {self.primary_attribute} to retrieve.")
+        print(f"{character.name}'s {self.primary_attribute}: {getattr(character, self.primary_attribute.lower()).value}")
+        print("Rolling dice...")
+        
+        roll = random.randint(1, 6)
+        print(f"Rolled: {roll}")
+        
+        total = roll + getattr(character, self.primary_attribute.lower()).value
+        print(f"Total (roll + {self.primary_attribute}): {total}")
+        
+        threshold = 8
+        print(f"Need {threshold} or higher to succeed.")
+        
+        return total >= threshold
+
+    def resolve_boss(self, party: List[Character], parser=None) -> bool:
+        """Resolve the final boss combat."""
         boss = Enemy("Iron Phantom", 25 + 5 * len(party), 4, 5)
         print(f"\n{boss.name} emerges! Vitality: {boss.vitality}")
+        
         while party and boss.vitality > 0:
             for member in party[:]:
                 if boss.vitality <= 0:
                     break
+                    
                 print(f"\n{member.name}'s turn. {boss.display_stats()}")
-                action = parser.parse("1. Attack\n> ")
-                if action == "1":
-                    hit_chance = 50 + (member.dexterity.value - boss.dexterity) * 5
-                    if random.randint(1, 100) <= hit_chance:
-                        damage = member.strength.value + random.randint(1, 6)
-                        boss.take_damage(damage)
-                        print(f"{member.name} hits {boss.name} for {damage} damage!")
-                    else:
-                        print(f"{member.name}'s attack misses!")
+                action = self._get_input("1. Attack\n> ", parser)
+                
+                hit_chance = 50 + (member.dexterity.value - boss.dexterity) * 5
+                if random.randint(1, 100) <= hit_chance:
+                    damage = member.strength.value + random.randint(1, 6)
+                    boss.take_damage(damage)
+                    print(f"{member.name} hits {boss.name} for {damage} damage!")
+                else:
+                    print(f"{member.name}'s attack misses!")
+                
                 if boss.vitality > 0:
                     target = random.choice(party)
                     hit_chance = 50 + (boss.dexterity - target.dexterity.value) * 5
@@ -198,92 +366,39 @@ class Event:
                         damage = boss.strength + random.randint(1, 6)
                         target.take_damage(damage)
                         print(f"{boss.name} hits {target.name} for {damage} damage!")
+                        print(f"{target.name}'s vitality: {target.vitality.value}/{target.max_vitality}")
                         if not target.is_alive():
                             party.remove(target)
                             print(f"{target.name} has fallen!")
+        
         return boss.vitality <= 0
 
-class Enemy:
-    def __init__(self, name: str, vitality: int, strength: int, dexterity: int):
-        self.name = name
-        self.vitality = vitality
-        self.strength = strength
-        self.dexterity = dexterity
-
-    def take_damage(self, damage: int):
-        self.vitality -= damage
-        if self.vitality < 0:
-            self.vitality = 0
-
-    def is_alive(self) -> bool:
-        return self.vitality > 0
-
-    def display_stats(self) -> str:
-        return f"{self.name}: Vitality {self.vitality}, Strength {self.strength}, Dexterity {self.dexterity}"
-
 class Location:
-    def __init__(self, events: List[Event]):
+    """Represents a location with multiple possible events."""
+    def __init__(self, name: str, events: List[Event]):
+        self.name = name
         self.events = events
 
     def get_event(self) -> Event:
+        """Return a random event from this location."""
         return random.choice(self.events)
 
-class Game:
-    def __init__(self, parser, characters: List[Character], locations: List[Location]):
-        self.parser = parser
-        self.party = characters
-        self.locations = locations
-        self.core_fragments = 0
-        self.continue_playing = True
-
-    def start(self):
-        print("""
-        Welcome to Canyon of the Lost Engines!
-        In this steampunk-Western canyon, you must collect 3 Core Fragments from ancient wrecks
-        to power an airship and escape. Beware the Iron Phantom!
-        """)
-        while self.continue_playing:
-            location = random.choice(self.locations)
-            event = location.get_event()
-            event.execute(self.party, self.parser)
-            if event.reward == "Core Fragment" and event.status == EventStatus.PASS:
-                self.core_fragments += 1
-                print(f"Core Fragments collected: {self.core_fragments}/3")
-            if self.check_game_over() or self.core_fragments >= 3:
-                self.final_challenge()
-                self.continue_playing = False
-        print("Game Over.")
-
-    def final_challenge(self):
-        if self.core_fragments >= 3:
-            print("""
-            You approach the Forge Gate with 3 Core Fragments.
-            The Iron Phantom rises, its voice booming: 'None shall leave!'
-            """)
-            boss_event = Event({
-                "type": "boss",
-                "prompt_text": "Prepare to face the Iron Phantom!",
-                "pass": {"message": "You defeat the Iron Phantom and power the airship! Victory!"},
-                "fail": {"message": "The Iron Phantom destroys your party. The canyon claims you."}
-            })
-            boss_event.execute(self.party, self.parser)
-        else:
-            print("Your party perished before collecting enough fragments.")
-
-    def check_game_over(self) -> bool:
-        return len(self.party) == 0
-
 class UserInputParser:
+    """Handles user input parsing."""
     def parse(self, prompt: str) -> str:
+        """Get input from the user with the given prompt."""
         return input(prompt)
 
     def select_party_member(self, party: List[Character]) -> Optional[Character]:
+        """Let the user select a party member."""
         if not party:
             print("No party members left!")
             return None
+            
         print("Choose a party member:")
         for idx, member in enumerate(party):
             print(f"{idx + 1}. {member}")
+            
         while True:
             try:
                 choice = int(self.parse("Enter the number of the chosen party member: ")) - 1
@@ -292,12 +407,14 @@ class UserInputParser:
                 print("Invalid choice. Try again.")
             except ValueError:
                 print("Please enter a valid number.")
-
+    
     def select_stat(self, character: Character) -> Statistic:
+        """Let the user select a character statistic."""
         print(f"Choose a stat for {character.name}:")
         stats = character.get_stats()
         for idx, stat in enumerate(stats):
             print(f"{idx + 1}. {stat}")
+            
         while True:
             try:
                 choice = int(self.parse("Enter the number of the stat to use: ")) - 1
@@ -307,30 +424,228 @@ class UserInputParser:
             except ValueError:
                 print("Please enter a valid number.")
 
+class Game:
+    """Main game controller class."""
+    def __init__(self, parser, characters: List[Character], locations: List[Location]):
+        self.parser = parser
+        self.party = characters
+        self.locations = locations
+        self.core_fragments = 0
+        self.continue_playing = True
+
+    def start(self):
+        """Start the game loop."""
+        self._print_intro()
+        
+        while self.continue_playing:
+            self._print_status()
+            location = self._select_location()
+            print(f"\nTraveling to {location.name}...")
+            
+            event = location.get_event()
+            success = event.execute(self.party, self.parser)
+            
+            if success and event.reward == "Core Fragment":
+                self.core_fragments += 1
+                print(f"\nCore Fragments collected: {self.core_fragments}/3")
+            
+            if self.check_game_over() or self.core_fragments >= 3:
+                self.final_challenge()
+                self.continue_playing = False
+            else:
+                # Ask if player wants to continue
+                self.continue_playing = self._get_continue_choice()
+        
+        print("\nGame Over.")
+        
+    def _print_intro(self):
+        """Print game introduction."""
+        print("""
+        ===============================================
+        CANYON OF THE LOST ENGINES
+        ===============================================
+        In this steampunk-Western canyon, you must collect 3 Core Fragments from ancient wrecks
+        to power an airship and escape. Beware the Iron Phantom!
+        
+        Use Strength for combat, Dexterity for loot, and Intelligence for puzzles.
+        Keep your vitality high to survive!
+        ===============================================
+        """)
+
+    def _print_status(self):
+        """Print current game status."""
+        print("\n==== STATUS ====")
+        print(f"Core Fragments: {self.core_fragments}/3")
+        print("\nParty Members:")
+        for member in self.party:
+            print(f"- {member}")
+        print("===============")
+
+    def _select_location(self) -> Location:
+        """Let player select a location to visit."""
+        print("\nChoose a location to explore:")
+        for idx, location in enumerate(self.locations):
+            print(f"{idx + 1}. {location.name}")
+        
+        while True:
+            try:
+                choice = int(self.parser.parse("Enter the number of your chosen destination: ")) - 1
+                if 0 <= choice < len(self.locations):
+                    return self.locations[choice]
+                print("Invalid choice. Try again.")
+            except ValueError:
+                print("Please enter a valid number.")
+    
+    def _get_continue_choice(self) -> bool:
+        """Ask if player wants to continue."""
+        print("\nContinue exploring the canyon?")
+        print("1. Yes")
+        print("2. No (End Game)")
+        
+        while True:
+            choice = self.parser.parse("> ")
+            if choice in ["1", "2"]:
+                break
+            print("Invalid choice. Try again.")
+        
+        if choice == "2":
+            print("\nYou decide to give up on your quest. The canyon claims another victim.")
+            return False
+        return True
+
+    def final_challenge(self):
+        """Handle the final boss challenge."""
+        if self.core_fragments >= 3:
+            print("""
+            You approach the Forge Gate with 3 Core Fragments.
+            As you insert them into the ancient mechanism, the ground trembles.
+            The Iron Phantom rises, its voice booming: 'None shall leave!'
+            """)
+            
+            boss_event = Event({
+                "type": "boss",
+                "prompt_text": "Prepare to face the Iron Phantom!",
+                "pass": {"message": "You defeat the Iron Phantom and power the airship! Victory!"},
+                "fail": {"message": "The Iron Phantom destroys your party. The canyon claims you."}
+            })
+            
+            if boss_event.execute(self.party, self.parser):
+                self._print_victory()
+            else:
+                self._print_defeat(True)
+        else:
+            self._print_defeat(False)
+    
+    def _print_victory(self):
+        """Print victory message."""
+        print("""
+        ===============================================
+        VICTORY!
+        ===============================================
+        With the Iron Phantom defeated and the Core Fragments installed,
+        the ancient airship roars to life! You escape the canyon,
+        soaring into the sunset toward new adventures.
+        
+        Thank you for playing Canyon of the Lost Engines!
+        ===============================================
+        """)
+    
+    def _print_defeat(self, with_fragments: bool):
+        """Print defeat message."""
+        if with_fragments:
+            print("""
+            ===============================================
+            DEFEAT
+            ===============================================
+            The Iron Phantom was too powerful. Your quest ends here,
+            your bones to be picked clean by the canyon scavengers.
+            
+            Better luck next time!
+            ===============================================
+            """)
+        else:
+            print("""
+            ===============================================
+            DEFEAT
+            ===============================================
+            Your party perished before collecting enough Core Fragments.
+            The canyon claims another group of adventurers.
+            
+            Better luck next time!
+            ===============================================
+            """)
+
+    def check_game_over(self) -> bool:
+        """Check if the game is over (party wiped out)."""
+        return len(self.party) == 0
+
 def load_events_from_json(file_path: str) -> List[Event]:
-    with open(file_path, 'r') as file:
-        data = json.load(file)
-    return [Event(event_data) for event_data in data]
+    """Load events from a JSON file."""
+    try:
+        with open(file_path, 'r') as file:
+            data = json.load(file)
+        return [Event(event_data) for event_data in data]
+    except Exception as e:
+        print(f"Error loading events from {file_path}: {e}")
+        return []
 
 def start_game():
+    """Initialize and start the game."""
+    # Initialize parser
     parser = UserInputParser()
-    # Custom character creation
-    class_options = {"1": "Scrapper", "2": "Gearshot", "3": "Steamwright", "4": "Rustblade"}
-    class_choice = parser.parse(
-        "Choose your starting class:\n1. Scrapper (Balanced)\n2. Gearshot (Dexterous)\n3. Steamwright (Smart)\n4. Rustblade (Strong)\n> "
-    )
+    
+    # Character creation
+    print("=== CHARACTER CREATION ===")
+    class_options = {
+        "1": "Scrapper", 
+        "2": "Gearshot", 
+        "3": "Steamwright", 
+        "4": "Rustblade"
+    }
+    
+    print("Choose your starting class:")
+    print("1. Scrapper (Balanced STR/DEX/VIT/INT)")
+    print("2. Gearshot (High DEX, Low STR)")
+    print("3. Steamwright (High INT, Medium STR)")
+    print("4. Rustblade (High STR, Low DEX)")
+    
+    while True:
+        class_choice = parser.parse("> ")
+        if class_choice in class_options:
+            break
+        print("Invalid choice. Try again.")
+    
     name = parser.parse("Enter your character's name: ")
-    characters = [Character(name, class_options.get(class_choice, "Scrapper"))]
-    print(f"\n{characters[0]}")
-
-    # Load events from multiple locations
-    locations = [
-        Location(load_events_from_json('project_code/location_events/rusted_titan.json')),
-        Location(load_events_from_json('project_code/location_events/boiler_gulch.json')),
-        Location(load_events_from_json('project_code/location_events/smokestack_spire.json'))
-    ]
-    game = Game(parser, characters, locations)
-    game.start()
+    
+    # Create character
+    character = Character(name, class_options.get(class_choice, "Scrapper"))
+    print(f"\nCharacter created: {character}")
+    
+    # Create locations with events
+    try:
+        rusted_titan = Location(
+            "Rusted Titan", 
+            load_events_from_json('project_code/location_events/rusted_titan.json')
+        )
+        
+        boiler_gulch = Location(
+            "Boiler Gulch", 
+            load_events_from_json('project_code/location_events/boiler_gulch.json')
+        )
+        
+        smokestack_spire = Location(
+            "Smokestack Spire", 
+            load_events_from_json('project_code/location_events/smokestack_spire.json')
+        )
+        
+        locations = [rusted_titan, boiler_gulch, smokestack_spire]
+        
+        # Start game
+        game = Game(parser, [character], locations)
+        game.start()
+        
+    except Exception as e:
+        print(f"Error initializing game: {e}")
 
 if __name__ == '__main__':
     start_game()
