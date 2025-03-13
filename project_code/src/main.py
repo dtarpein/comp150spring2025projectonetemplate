@@ -143,7 +143,7 @@ class Event:
         enemy = Enemy(self.enemy["name"], self.enemy["vitality"], self.enemy["strength"], self.enemy["dexterity"])
         print(f"\n{character.name} engages {enemy.name}!")
         while character.is_alive() and enemy.is_alive():
-            action = parser.parse("1. Attack 2. Flee\n> ")
+            
             if action == "1":
                 hit_chance = 50 + (character.dexterity.value - enemy.dexterity) * 5
                 if random.randint(1, 100) <= hit_chance:
