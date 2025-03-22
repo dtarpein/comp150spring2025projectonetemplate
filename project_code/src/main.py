@@ -3,11 +3,12 @@ Main module for Canyon of the Lost Engines game.
 """
 import json
 import random
+import sys
+import os
 from typing import List, Optional
 from enum import Enum
 
-# For the tests to work, we need to define these classes directly in main.py
-# since test_game.py imports them from here
+# Define all classes directly in main.py to make tests work
 
 class EventStatus(Enum):
     UNKNOWN = "unknown"
@@ -436,6 +437,156 @@ class UserInputParser:
                 print("Invalid choice. Try again.")
             except ValueError:
                 print("Please enter a valid number.")
+
+class Game:
+    """Main game controller class."""
+    def __init__(self, parser, characters: List[Character], locations: List[Location]):
+        self.parser = parser
+        self.party = characters
+        self.locations = locations
+        self.core_fragments = 0
+        self.continue_playing = True
+
+    def start(self):
+        """Start the game loop."""
+        self._print_intro()
+        
+        while self.continue_playing:
+            self._print_status()
+            location = self._select_location()
+            print(f"\nTraveling to {location.name}...")
+            
+            event = location.get_event()
+            success = event.execute(self.party, self.parser)
+            
+            if success and event.reward == "Core Fragment":
+                self.core_fragments += 1
+                print(f"\nCore Fragments collected: {self.core_fragments}/3")
+            
+            game_over = self.check_game_over() or self.core_fragments >= 3
+            if game_over:
+                self.final_challenge()
+                self.continue_playing = False
+                continue
+                
+            # Ask if player wants to continue
+            self.continue_playing = self._get_continue_choice()
+        
+        print("\nGame Over.")
+        
+    def _print_intro(self):
+        """Print game introduction."""
+        print("""
+        ===============================================
+        CANYON OF THE LOST ENGINES
+        ===============================================
+        In this steampunk-Western canyon, you must collect 3 Core Fragments from ancient wrecks
+        to power an airship and escape. Beware the Iron Phantom!
+        
+        Use Strength for combat, Dexterity for loot, and Intelligence for puzzles.
+        Keep your vitality high to survive!
+        ===============================================
+        """)
+
+    def _print_status(self):
+        """Print current game status."""
+        print("\n==== STATUS ====")
+        print(f"Core Fragments: {self.core_fragments}/3")
+        print("\nParty Members:")
+        for member in self.party:
+            print(f"- {member}")
+        print("===============")
+
+    def _select_location(self) -> Location:
+        """Let player select a location to visit."""
+        print("\nChoose a location to explore:")
+        for idx, location in enumerate(self.locations):
+            print(f"{idx + 1}. {location.name}")
+        
+        while True:
+            try:
+                choice = int(self.parser.parse("Enter the number of your chosen destination: ")) - 1
+                if 0 <= choice < len(self.locations):
+                    return self.locations[choice]
+                print("Invalid choice. Try again.")
+            except ValueError:
+                print("Please enter a valid number.")
+    
+    def _get_continue_choice(self) -> bool:
+        """Ask if player wants to continue."""
+        print("\nContinue exploring the canyon?")
+        print("1. Yes")
+        print("2. No (End Game)")
+        
+        while True:
+            choice = self.parser.parse("> ")
+            if choice in ["1", "2"]:
+                break
+            print("Invalid choice. Try again.")
+        
+        if choice == "2":
+            print("\nYou decide to give up on your quest. The canyon claims another victim.")
+            return False
+        return True
+
+    def final_challenge(self):
+        """Handle the final boss challenge."""
+        has_fragments = self.core_fragments >= 3
+        if has_fragments:
+            print("""
+            You approach the Forge Gate with 3 Core Fragments.
+            As you insert them into the ancient mechanism, the ground trembles.
+            The Iron Phantom rises, its voice booming: 'None shall leave!'
+            """)
+            
+            boss_event = Event({
+                "type": "boss",
+                "prompt_text": "Prepare to face the Iron Phantom!",
+                "pass": {"message": "You defeat the Iron Phantom and power the airship! Victory!"},
+                "fail": {"message": "The Iron Phantom destroys your party. The canyon claims you."}
+            })
+            
+            victory = boss_event.execute(self.party, self.parser)
+            if victory:
+                self._print_victory()
+            else:
+                self._print_defeat(True)
+        else:
+            self._print_defeat(False)
+    
+    def _print_victory(self):
+        """Print victory message."""
+        print("""
+        ===============================================
+        VICTORY!
+        ===============================================
+        With the Iron Phantom defeated and the Core Fragments installed,
+        the ancient airship roars to life! You escape the canyon,
+        soaring into the sunset toward new adventures.
+        
+        Thank you for playing Canyon of the Lost Engines!
+        ===============================================
+        """)
+    
+    def _print_defeat(self, with_fragments: bool):
+        """Print defeat message."""
+        defeat_message = """
+        ===============================================
+        DEFEAT
+        ===============================================
+        {}
+        
+        Better luck next time!
+        ===============================================
+        """
+        
+        message = "The Iron Phantom was too powerful. Your quest ends here,\nyour bones to be picked clean by the canyon scavengers." if with_fragments else "Your party perished before collecting enough Core Fragments.\nThe canyon claims another group of adventurers."
+        
+        print(defeat_message.format(message))
+
+    def check_game_over(self) -> bool:
+        """Check if the game is over (party wiped out)."""
+        return len(self.party) == 0
 
 def load_events_from_json(file_path: str) -> List[Event]:
     """Load events from a JSON file."""
