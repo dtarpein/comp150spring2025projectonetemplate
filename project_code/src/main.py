@@ -1,8 +1,13 @@
+"""
+Main module for Canyon of the Lost Engines game.
+"""
 import json
-import sys
 import random
-from typing import List, Optional, Tuple
+from typing import List, Optional
 from enum import Enum
+
+# For the tests to work, we need to define these classes directly in main.py
+# since test_game.py imports them from here
 
 class EventStatus(Enum):
     UNKNOWN = "unknown"
@@ -86,9 +91,7 @@ class Enemy:
 
     def take_damage(self, damage: int):
         """Reduce vitality by damage amount."""
-        self.vitality -= damage
-        if self.vitality < 0:
-            self.vitality = 0
+        self.vitality = max(0, self.vitality - damage)  # Prevent negative vitality
 
     def is_alive(self) -> bool:
         """Check if enemy is alive."""
@@ -129,14 +132,10 @@ class Event:
         
         # Get the appropriate handler for this event type
         handler = event_handlers.get(self.type)
-        if handler:
-            return handler(party, parser)
-        
-        return False
+        return handler(party, parser) if handler else False
     
     def _handle_combat(self, party, parser):
         """Handle a combat event."""
-        # Select character - use parser if provided, otherwise select directly
         character = self._select_party_member(party, parser)
         if not character:
             return False
@@ -221,9 +220,7 @@ class Event:
     
     def _get_input(self, prompt, parser=None):
         """Get input using parser if available, otherwise use direct input."""
-        if parser:
-            return parser.parse(prompt)
-        return input(prompt)
+        return parser.parse(prompt) if parser else input(prompt)
     
     def _select_party_member(self, party, parser=None):
         """Select a party member using parser if available, else select directly."""
@@ -249,18 +246,26 @@ class Event:
                 
     def resolve_choice(self, character: Character, chosen_stat: Statistic):
         """Resolve event based on chosen statistic."""
-        if chosen_stat.name.lower() == self.primary_attribute.lower():
+        chosen_stat_name = chosen_stat.name.lower()
+        primary_attr = self.primary_attribute.lower() if self.primary_attribute else ""
+        secondary_attr = self.secondary_attribute.lower() if self.secondary_attribute else ""
+        
+        # Check primary attribute match
+        if chosen_stat_name == primary_attr:
             self.status = EventStatus.PASS
             print(self.pass_message)
             return True
-        elif self.secondary_attribute and chosen_stat.name.lower() == self.secondary_attribute.lower():
+            
+        # Check secondary attribute match
+        if secondary_attr and chosen_stat_name == secondary_attr:
             self.status = EventStatus.PARTIAL_PASS
             print(self.partial_pass_message)
             return True
-        else:
-            self.status = EventStatus.FAIL
-            print(self.fail_message)
-            return False
+            
+        # No match
+        self.status = EventStatus.FAIL
+        print(self.fail_message)
+        return False
 
     def resolve_combat(self, character: Character, party: List[Character], parser=None) -> bool:
         """Resolve a combat event."""
@@ -307,13 +312,14 @@ class Event:
     def resolve_puzzle(self, character: Character) -> bool:
         """Resolve a puzzle event with a stat check."""
         print(f"This puzzle requires {self.primary_attribute}.")
-        print(f"{character.name}'s {self.primary_attribute}: {getattr(character, self.primary_attribute.lower()).value}")
+        stat_value = getattr(character, self.primary_attribute.lower()).value
+        print(f"{character.name}'s {self.primary_attribute}: {stat_value}")
         print("Rolling dice...")
         
         roll = random.randint(1, 6)
         print(f"Rolled: {roll}")
         
-        total = roll + getattr(character, self.primary_attribute.lower()).value
+        total = roll + stat_value
         print(f"Total (roll + {self.primary_attribute}): {total}")
         
         threshold = 10
@@ -324,13 +330,14 @@ class Event:
     def resolve_loot(self, character: Character) -> bool:
         """Resolve a loot event with a dexterity check."""
         print(f"This requires {self.primary_attribute} to retrieve.")
-        print(f"{character.name}'s {self.primary_attribute}: {getattr(character, self.primary_attribute.lower()).value}")
+        stat_value = getattr(character, self.primary_attribute.lower()).value
+        print(f"{character.name}'s {self.primary_attribute}: {stat_value}")
         print("Rolling dice...")
         
         roll = random.randint(1, 6)
         print(f"Rolled: {roll}")
         
-        total = roll + getattr(character, self.primary_attribute.lower()).value
+        total = roll + stat_value
         print(f"Total (roll + {self.primary_attribute}): {total}")
         
         threshold = 8
@@ -343,7 +350,9 @@ class Event:
         boss = Enemy("Iron Phantom", 25 + 5 * len(party), 4, 5)
         print(f"\n{boss.name} emerges! Vitality: {boss.vitality}")
         
+        # Boss combat loop
         while party and boss.vitality > 0:
+            # Each party member's turn
             for member in party[:]:
                 if boss.vitality <= 0:
                     break
@@ -351,6 +360,7 @@ class Event:
                 print(f"\n{member.name}'s turn. {boss.display_stats()}")
                 action = self._get_input("1. Attack\n> ", parser)
                 
+                # Player attack
                 hit_chance = 50 + (member.dexterity.value - boss.dexterity) * 5
                 if random.randint(1, 100) <= hit_chance:
                     damage = member.strength.value + random.randint(1, 6)
@@ -359,14 +369,17 @@ class Event:
                 else:
                     print(f"{member.name}'s attack misses!")
                 
+                # Boss attack
                 if boss.vitality > 0:
                     target = random.choice(party)
                     hit_chance = 50 + (boss.dexterity - target.dexterity.value) * 5
+                    
                     if random.randint(1, 100) <= hit_chance:
                         damage = boss.strength + random.randint(1, 6)
                         target.take_damage(damage)
                         print(f"{boss.name} hits {target.name} for {damage} damage!")
                         print(f"{target.name}'s vitality: {target.vitality.value}/{target.max_vitality}")
+                        
                         if not target.is_alive():
                             party.remove(target)
                             print(f"{target.name} has fallen!")
@@ -424,161 +437,6 @@ class UserInputParser:
             except ValueError:
                 print("Please enter a valid number.")
 
-class Game:
-    """Main game controller class."""
-    def __init__(self, parser, characters: List[Character], locations: List[Location]):
-        self.parser = parser
-        self.party = characters
-        self.locations = locations
-        self.core_fragments = 0
-        self.continue_playing = True
-
-    def start(self):
-        """Start the game loop."""
-        self._print_intro()
-        
-        while self.continue_playing:
-            self._print_status()
-            location = self._select_location()
-            print(f"\nTraveling to {location.name}...")
-            
-            event = location.get_event()
-            success = event.execute(self.party, self.parser)
-            
-            if success and event.reward == "Core Fragment":
-                self.core_fragments += 1
-                print(f"\nCore Fragments collected: {self.core_fragments}/3")
-            
-            if self.check_game_over() or self.core_fragments >= 3:
-                self.final_challenge()
-                self.continue_playing = False
-            else:
-                # Ask if player wants to continue
-                self.continue_playing = self._get_continue_choice()
-        
-        print("\nGame Over.")
-        
-    def _print_intro(self):
-        """Print game introduction."""
-        print("""
-        ===============================================
-        CANYON OF THE LOST ENGINES
-        ===============================================
-        In this steampunk-Western canyon, you must collect 3 Core Fragments from ancient wrecks
-        to power an airship and escape. Beware the Iron Phantom!
-        
-        Use Strength for combat, Dexterity for loot, and Intelligence for puzzles.
-        Keep your vitality high to survive!
-        ===============================================
-        """)
-
-    def _print_status(self):
-        """Print current game status."""
-        print("\n==== STATUS ====")
-        print(f"Core Fragments: {self.core_fragments}/3")
-        print("\nParty Members:")
-        for member in self.party:
-            print(f"- {member}")
-        print("===============")
-
-    def _select_location(self) -> Location:
-        """Let player select a location to visit."""
-        print("\nChoose a location to explore:")
-        for idx, location in enumerate(self.locations):
-            print(f"{idx + 1}. {location.name}")
-        
-        while True:
-            try:
-                choice = int(self.parser.parse("Enter the number of your chosen destination: ")) - 1
-                if 0 <= choice < len(self.locations):
-                    return self.locations[choice]
-                print("Invalid choice. Try again.")
-            except ValueError:
-                print("Please enter a valid number.")
-    
-    def _get_continue_choice(self) -> bool:
-        """Ask if player wants to continue."""
-        print("\nContinue exploring the canyon?")
-        print("1. Yes")
-        print("2. No (End Game)")
-        
-        while True:
-            choice = self.parser.parse("> ")
-            if choice in ["1", "2"]:
-                break
-            print("Invalid choice. Try again.")
-        
-        if choice == "2":
-            print("\nYou decide to give up on your quest. The canyon claims another victim.")
-            return False
-        return True
-
-    def final_challenge(self):
-        """Handle the final boss challenge."""
-        if self.core_fragments >= 3:
-            print("""
-            You approach the Forge Gate with 3 Core Fragments.
-            As you insert them into the ancient mechanism, the ground trembles.
-            The Iron Phantom rises, its voice booming: 'None shall leave!'
-            """)
-            
-            boss_event = Event({
-                "type": "boss",
-                "prompt_text": "Prepare to face the Iron Phantom!",
-                "pass": {"message": "You defeat the Iron Phantom and power the airship! Victory!"},
-                "fail": {"message": "The Iron Phantom destroys your party. The canyon claims you."}
-            })
-            
-            if boss_event.execute(self.party, self.parser):
-                self._print_victory()
-            else:
-                self._print_defeat(True)
-        else:
-            self._print_defeat(False)
-    
-    def _print_victory(self):
-        """Print victory message."""
-        print("""
-        ===============================================
-        VICTORY!
-        ===============================================
-        With the Iron Phantom defeated and the Core Fragments installed,
-        the ancient airship roars to life! You escape the canyon,
-        soaring into the sunset toward new adventures.
-        
-        Thank you for playing Canyon of the Lost Engines!
-        ===============================================
-        """)
-    
-    def _print_defeat(self, with_fragments: bool):
-        """Print defeat message."""
-        if with_fragments:
-            print("""
-            ===============================================
-            DEFEAT
-            ===============================================
-            The Iron Phantom was too powerful. Your quest ends here,
-            your bones to be picked clean by the canyon scavengers.
-            
-            Better luck next time!
-            ===============================================
-            """)
-        else:
-            print("""
-            ===============================================
-            DEFEAT
-            ===============================================
-            Your party perished before collecting enough Core Fragments.
-            The canyon claims another group of adventurers.
-            
-            Better luck next time!
-            ===============================================
-            """)
-
-    def check_game_over(self) -> bool:
-        """Check if the game is over (party wiped out)."""
-        return len(self.party) == 0
-
 def load_events_from_json(file_path: str) -> List[Event]:
     """Load events from a JSON file."""
     try:
@@ -609,37 +467,37 @@ def start_game():
     print("3. Steamwright (High INT, Medium STR)")
     print("4. Rustblade (High STR, Low DEX)")
     
-    while True:
+    class_choice = ""
+    while class_choice not in class_options:
         class_choice = parser.parse("> ")
-        if class_choice in class_options:
-            break
-        print("Invalid choice. Try again.")
+        if class_choice not in class_options:
+            print("Invalid choice. Try again.")
     
     name = parser.parse("Enter your character's name: ")
     
     # Create character
-    character = Character(name, class_options.get(class_choice, "Scrapper"))
+    character = Character(name, class_options[class_choice])
     print(f"\nCharacter created: {character}")
     
     # Create locations with events
     try:
-        rusted_titan = Location(
-            "Rusted Titan", 
-            load_events_from_json('project_code/location_events/rusted_titan.json')
-        )
+        # Load all locations
+        locations = []
+        location_data = [
+            ("Rusted Titan", 'project_code/location_events/rusted_titan.json'),
+            ("Boiler Gulch", 'project_code/location_events/boiler_gulch.json'),
+            ("Smokestack Spire", 'project_code/location_events/smokestack_spire.json')
+        ]
         
-        boiler_gulch = Location(
-            "Boiler Gulch", 
-            load_events_from_json('project_code/location_events/boiler_gulch.json')
-        )
+        for name, path in location_data:
+            events = load_events_from_json(path)
+            if events:  # Only add location if it has events
+                locations.append(Location(name, events))
         
-        smokestack_spire = Location(
-            "Smokestack Spire", 
-            load_events_from_json('project_code/location_events/smokestack_spire.json')
-        )
-        
-        locations = [rusted_titan, boiler_gulch, smokestack_spire]
-        
+        if not locations:
+            print("Error: No locations could be loaded. Check your event files.")
+            return
+            
         # Start game
         game = Game(parser, [character], locations)
         game.start()
