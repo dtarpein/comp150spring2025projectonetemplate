@@ -1,26 +1,15 @@
+"""Events module for Canyon of the Lost Engines game."""
 import random
-import sys
-import os
-from typing import List, Optional, Tuple, Dict, Callable
 from enum import Enum
 
-# Handle imports differently when running as a script vs being imported
-if __name__ == "__main__":
-    # Running as script - add project root to path
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+# Handle imports with try-except for flexibility
+try:
     from project_code.src.character import Character, Enemy, Statistic
-else:
-    # Being imported - use either absolute or relative imports based on context
+except ImportError:
     try:
-        # Try absolute import first
-        from project_code.src.character import Character, Enemy, Statistic
+        from character import Character, Enemy, Statistic
     except ImportError:
-        # If that fails, try direct import (assumes files are in same directory)
-        try:
-            from character import Character, Enemy, Statistic
-        except ImportError:
-            # Last resort - relative import
-            from .character import Character, Enemy, Statistic
+        from .character import Character, Enemy, Statistic
 
 class EventStatus(Enum):
     UNKNOWN = "unknown"
@@ -30,8 +19,8 @@ class EventStatus(Enum):
 
 class Event:
     """Represents an in-game event with resolution logic."""
-    def __init__(self, data: dict):
-        # Extract values from data dict with defaults for missing keys
+    def __init__(self, data):
+        # Extract values with defaults
         self.type = data.get("type", "default")
         self.primary_attribute = data.get('primary_attribute', "")
         self.secondary_attribute = data.get('secondary_attribute', "")
@@ -45,22 +34,22 @@ class Event:
         self.enemy = data.get('enemy', None)
         self.status = EventStatus.UNKNOWN
 
-    def execute(self, party: List[Character], parser=None) -> bool:
+    def execute(self, party, parser=None):
         """Execute the event based on its type."""
         print(f"\n{self.prompt_text}")
         
-        # Dictionary maps event types to handler methods
-        event_handlers = {
-            "combat": self._handle_combat,
-            "puzzle": self._handle_puzzle,
-            "loot": self._handle_loot,
-            "recruit": self._handle_recruit,
-            "boss": self._handle_boss
-        }
-        
-        # Get the appropriate handler for this event type or return False if not found
-        handler = event_handlers.get(self.type)
-        return handler(party, parser) if handler else False
+        # Map event types to handlers
+        if self.type == "combat":
+            return self._handle_combat(party, parser)
+        elif self.type == "puzzle":
+            return self._handle_puzzle(party, parser)
+        elif self.type == "loot":
+            return self._handle_loot(party, parser)
+        elif self.type == "recruit":
+            return self._handle_recruit(party, parser)
+        elif self.type == "boss":
+            return self._handle_boss(party, parser)
+        return False
     
     def _handle_combat(self, party, parser):
         """Handle a combat event."""
@@ -97,6 +86,7 @@ class Event:
             if self.reward and hasattr(character, 'add_to_inventory'):
                 print(f"Reward: {self.reward}")
                 character.add_to_inventory(self.reward)
+            return True
         else:
             print(self.fail_message)
             if self.penalty:
@@ -105,8 +95,7 @@ class Event:
                 if not character.is_alive():
                     party.remove(character)
                     print(f"{character.name} has been lost!")
-                    
-        return success
+            return False
     
     def _handle_loot(self, party, parser):
         character = self._select_party_member(party, parser)
@@ -125,16 +114,12 @@ class Event:
     
     def _handle_recruit(self, party, parser):
         self.status = EventStatus.PASS
-        prompt = "Recruit this survivor? 1. Yes 2. No\n> "
+        choice = self._get_input("Recruit this survivor? 1. Yes 2. No\n> ", parser)
         
-        choice = self._get_input(prompt, parser)
-        
-        # Early return for "No" choice or no recruit data
         if choice != "1" or not self.recruit:
             print("You leave the survivor behind.")
             return False
             
-        # Handle "Yes" choice
         new_char = Character(self.recruit["name"], self.recruit["class"])
         new_char.vitality.value = self.recruit["initial_vitality"]
         party.append(new_char)
@@ -173,30 +158,27 @@ class Event:
             except ValueError:
                 print("Please enter a valid number.")
                 
-    def resolve_choice(self, character: Character, chosen_stat: Statistic):
+    def resolve_choice(self, character, chosen_stat):
         """Resolve event based on chosen statistic."""
         chosen_stat_name = chosen_stat.name.lower()
-        primary_attr = self.primary_attribute.lower()
-        secondary_attr = self.secondary_attribute.lower() if self.secondary_attribute else None
+        primary_attr = self.primary_attribute.lower() if self.primary_attribute else ""
+        secondary_attr = self.secondary_attribute.lower() if self.secondary_attribute else ""
         
-        # Check primary attribute match
+        # Check attribute matches
         if chosen_stat_name == primary_attr:
             self.status = EventStatus.PASS
             print(self.pass_message)
             return True
-            
-        # Check secondary attribute match
-        if secondary_attr and chosen_stat_name == secondary_attr:
+        elif secondary_attr and chosen_stat_name == secondary_attr:
             self.status = EventStatus.PARTIAL_PASS
             print(self.partial_pass_message)
             return True
-            
-        # No match
-        self.status = EventStatus.FAIL
-        print(self.fail_message)
-        return False
+        else:
+            self.status = EventStatus.FAIL
+            print(self.fail_message)
+            return False
 
-    def resolve_combat(self, character: Character, party: List[Character], parser=None) -> bool:
+    def resolve_combat(self, character, party, parser=None):
         """Resolve a combat event."""
         if not self.enemy:
             print("No enemy information available!")
@@ -210,90 +192,69 @@ class Event:
         while character.is_alive() and enemy.is_alive():
             action = self._get_input("1. Attack 2. Flee\n> ", parser)
             
-            # Handle player action
+            # Handle player turn
             if action == "1":  # Attack
-                self._player_attack(character, enemy)
+                hit_chance = 50 + (character.dexterity.value - enemy.dexterity) * 5
+                if random.randint(1, 100) <= hit_chance:
+                    damage = character.strength.value + random.randint(1, 6)
+                    enemy.take_damage(damage)
+                    print(f"{character.name} hits {enemy.name} for {damage} damage!")
+                else:
+                    print(f"{character.name}'s attack misses!")
             elif action == "2":  # Flee
-                flee_success = self._attempt_flee(character)
-                if flee_success:
+                flee_chance = 50 + character.dexterity.value
+                if random.randint(1, 100) <= flee_chance:
+                    print(f"{character.name} flees successfully!")
                     return False
+                else:
+                    print("Failed to flee!")
             
             # Handle enemy turn if still alive
             if enemy.is_alive():
-                self._enemy_attack(enemy, character)
+                hit_chance = 50 + (enemy.dexterity - character.dexterity.value) * 5
+                if random.randint(1, 100) <= hit_chance:
+                    damage = enemy.strength + random.randint(1, 6)
+                    character.take_damage(damage)
+                    print(f"{enemy.name} hits {character.name} for {damage} damage!")
+                    print(f"{character.name}'s vitality: {character.vitality.value}/{character.max_vitality}")
+                else:
+                    print(f"{enemy.name}'s attack misses!")
 
         return enemy.vitality <= 0
-    
-    def _player_attack(self, character: Character, enemy: Enemy) -> None:
-        """Handle player attack on enemy."""
-        hit_chance = 50 + (character.dexterity.value - enemy.dexterity) * 5
-        hit = random.randint(1, 100) <= hit_chance
-        
-        if hit:
-            damage = character.strength.value + random.randint(1, 6)
-            enemy.take_damage(damage)
-            print(f"{character.name} hits {enemy.name} for {damage} damage!")
-        else:
-            print(f"{character.name}'s attack misses!")
-    
-    def _attempt_flee(self, character: Character) -> bool:
-        """Attempt to flee from combat. Returns True if successful."""
-        flee_chance = 50 + character.dexterity.value
-        success = random.randint(1, 100) <= flee_chance
-        
-        print(f"{character.name} flees successfully!" if success else "Failed to flee!")
-        return success
-    
-    def _enemy_attack(self, enemy: Enemy, character: Character) -> None:
-        """Handle enemy attack on character."""
-        hit_chance = 50 + (enemy.dexterity - character.dexterity.value) * 5
-        hit = random.randint(1, 100) <= hit_chance
-        
-        if hit:
-            damage = enemy.strength + random.randint(1, 6)
-            character.take_damage(damage)
-            print(f"{enemy.name} hits {character.name} for {damage} damage!")
-            print(f"{character.name}'s vitality: {character.vitality.value}/{character.max_vitality}")
-        else:
-            print(f"{enemy.name}'s attack misses!")
 
-    def resolve_puzzle(self, character: Character) -> bool:
+    def resolve_puzzle(self, character):
         """Resolve a puzzle event with a stat check."""
         print(f"This puzzle requires {self.primary_attribute}.")
         stat_value = getattr(character, self.primary_attribute.lower()).value
         print(f"{character.name}'s {self.primary_attribute}: {stat_value}")
-        print("Rolling dice...")
         
         roll = random.randint(1, 6)
-        print(f"Rolled: {roll}")
+        print(f"Rolling dice... Rolled: {roll}")
         
         total = roll + stat_value
-        print(f"Total (roll + {self.primary_attribute}): {total}")
-        
         threshold = 10
+        print(f"Total (roll + {self.primary_attribute}): {total}")
         print(f"Need {threshold} or higher to succeed.")
         
         return total >= threshold
 
-    def resolve_loot(self, character: Character) -> bool:
+    def resolve_loot(self, character):
         """Resolve a loot event with a dexterity check."""
         print(f"This requires {self.primary_attribute} to retrieve.")
         stat_value = getattr(character, self.primary_attribute.lower()).value
         print(f"{character.name}'s {self.primary_attribute}: {stat_value}")
-        print("Rolling dice...")
         
         roll = random.randint(1, 6)
-        print(f"Rolled: {roll}")
+        print(f"Rolling dice... Rolled: {roll}")
         
         total = roll + stat_value
-        print(f"Total (roll + {self.primary_attribute}): {total}")
-        
         threshold = 8
+        print(f"Total (roll + {self.primary_attribute}): {total}")
         print(f"Need {threshold} or higher to succeed.")
         
         return total >= threshold
 
-    def resolve_boss(self, party: List[Character], parser=None) -> bool:
+    def resolve_boss(self, party, parser=None):
         """Resolve the final boss combat."""
         boss = Enemy("Iron Phantom", 25 + 5 * len(party), 4, 5)
         print(f"\n{boss.name} emerges! Vitality: {boss.vitality}")
@@ -306,7 +267,7 @@ class Event:
                     break
                     
                 print(f"\n{member.name}'s turn. {boss.display_stats()}")
-                action = self._get_input("1. Attack\n> ", parser)
+                self._get_input("1. Attack\n> ", parser)  # Only option is to attack
                 
                 # Player attack
                 hit_chance = 50 + (member.dexterity.value - boss.dexterity) * 5
@@ -317,7 +278,7 @@ class Event:
                 else:
                     print(f"{member.name}'s attack misses!")
                 
-                # Boss attack
+                # Boss attack if still alive
                 if boss.vitality > 0:
                     target = random.choice(party)
                     hit_chance = 50 + (boss.dexterity - target.dexterity.value) * 5

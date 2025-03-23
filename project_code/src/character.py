@@ -1,9 +1,9 @@
-from typing import Optional, List
+"""Character module for Canyon of the Lost Engines game."""
 import random
 
 class Statistic:
     """Represents a character's statistic with a value and constraints."""
-    def __init__(self, name: str, value: int = 0, description: str = "", min_value: int = 0, max_value: int = 100):
+    def __init__(self, name, value=0, description="", min_value=0, max_value=100):
         self.name = name
         self.value = value
         self.description = description
@@ -13,7 +13,7 @@ class Statistic:
     def __str__(self):
         return f"{self.name}: {self.value}"
 
-    def modify(self, amount: int):
+    def modify(self, amount):
         """Modify the statistic value within bounds."""
         self.value = max(self.min_value, min(self.max_value, self.value + amount))
 
@@ -27,28 +27,24 @@ class Character:
         "Rustblade": {"strength": 7, "dexterity": 4, "vitality": 16, "intelligence": 4}
     }
     
-    def __init__(self, name: str = "Bob", class_type: str = "Scrapper"):
+    def __init__(self, name="Bob", class_type="Scrapper"):
         self.name = name
         self.class_type = class_type
         
-        # Initialize all statistics
+        # Initialize statistics
         self.strength = Statistic("Strength", description="Physical power.")
         self.dexterity = Statistic("Dexterity", description="Agility and accuracy.")
         self.vitality = Statistic("Vitality", description="Health points.", max_value=30)
         self.intelligence = Statistic("Intelligence", description="Problem-solving ability.")
         
-        # Setup character
         self.set_base_stats()
         self.randomize_stats()
-        self.max_vitality = self.vitality.value  # Track max for healing
-        self.inventory = []  # Track items collected
+        self.max_vitality = self.vitality.value
+        self.inventory = []
 
     def set_base_stats(self):
         """Set base stats based on class type."""
-        # Get stats for this class, or default to Scrapper
         class_stats = self.BASE_STATS.get(self.class_type, self.BASE_STATS["Scrapper"])
-        
-        # Apply stats to character
         for stat, value in class_stats.items():
             getattr(self, stat).value = value
 
@@ -57,16 +53,16 @@ class Character:
         for stat in self.get_stats():
             stat.modify(random.randint(-2, 2))
 
-    def take_damage(self, damage: int) -> bool:
+    def take_damage(self, damage):
         """Reduce vitality and return if alive."""
         self.vitality.modify(-damage)
         return self.vitality.value > 0
 
-    def is_alive(self) -> bool:
+    def is_alive(self):
         """Check if character is alive."""
         return self.vitality.value > 0
         
-    def add_to_inventory(self, item: str):
+    def add_to_inventory(self, item):
         """Add an item to the character's inventory."""
         self.inventory.append(item)
 
@@ -82,20 +78,20 @@ class Character:
 
 class Enemy:
     """Represents an enemy with basic combat stats."""
-    def __init__(self, name: str, vitality: int, strength: int, dexterity: int):
+    def __init__(self, name, vitality, strength, dexterity):
         self.name = name
         self.vitality = vitality
         self.strength = strength
         self.dexterity = dexterity
 
-    def take_damage(self, damage: int):
+    def take_damage(self, damage):
         """Reduce vitality by damage amount."""
-        self.vitality = max(0, self.vitality - damage)  # Prevent negative vitality
+        self.vitality = max(0, self.vitality - damage)
 
-    def is_alive(self) -> bool:
+    def is_alive(self):
         """Check if enemy is alive."""
         return self.vitality > 0
 
-    def display_stats(self) -> str:
+    def display_stats(self):
         """Return formatted stats string."""
         return f"{self.name}: Vitality {self.vitality}, Strength {self.strength}, Dexterity {self.dexterity}"
