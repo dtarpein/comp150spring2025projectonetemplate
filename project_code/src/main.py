@@ -1,135 +1,69 @@
 """Main module for Canyon of the Lost Engines game."""
-import json
 import random
-import time
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Dict, Any
 
 # Import necessary modules
 try:
-    from project_code.src.character import Character, Statistic, Enemy
+    from project_code.src.character import Character
     from project_code.src.events import Event, EventStatus
-except ImportError:
+    from project_code.src.game_core import (
+        Location, UserInputParser, load_events_from_json, 
+        load_game_locations, create_character,
+        print_game_intro, print_game_status, print_victory, print_defeat
+    )
+    # Try to import the adventure system module if available
     try:
-        from character import Character, Statistic, Enemy
-        from events import Event, EventStatus
+        from project_code.src.adventure_system import (
+            enhance_game_with_scavenging, 
+            enhance_game_with_repairs, 
+            add_scavenging_to_location,
+            RepairSystem
+        )
+        HAS_ADVENTURE_SYSTEM = True
     except ImportError:
-        from .character import Character, Statistic, Enemy
+        HAS_ADVENTURE_SYSTEM = False
+except ImportError:
+    # Local imports
+    try:
+        from character import Character
+        from events import Event, EventStatus
+        from game_core import (
+            Location, UserInputParser, load_events_from_json, 
+            load_game_locations, create_character,
+            print_game_intro, print_game_status, print_victory, print_defeat
+        )
+        try:
+            from adventure_system import (
+                enhance_game_with_scavenging, 
+                enhance_game_with_repairs, 
+                add_scavenging_to_location,
+                RepairSystem
+            )
+            HAS_ADVENTURE_SYSTEM = True
+        except ImportError:
+            HAS_ADVENTURE_SYSTEM = False
+    except ImportError:
+        # Relative imports
+        from .character import Character
         from .events import Event, EventStatus
+        from .game_core import (
+            Location, UserInputParser, load_events_from_json, 
+            load_game_locations, create_character,
+            print_game_intro, print_game_status, print_victory, print_defeat
+        )
+        try:
+            from .adventure_system import (
+                enhance_game_with_scavenging, 
+                enhance_game_with_repairs, 
+                add_scavenging_to_location,
+                RepairSystem
+            )
+            HAS_ADVENTURE_SYSTEM = True
+        except ImportError:
+            HAS_ADVENTURE_SYSTEM = False
 
 # Re-export these classes for backward compatibility with tests
-__all__ = ['Character', 'Statistic', 'Enemy', 'Event', 'EventStatus', 'Location', 'UserInputParser', 'Game', 'load_events_from_json']
-
-class Location:
-    """Represents a location with multiple possible events."""
-    def __init__(self, name, events, description="A mysterious location"):
-        self.name = name
-        self.events = events
-        self.description = description
-        self.visited = False
-        self.scavenged = False
-
-    def get_event(self):
-        """Return a random event from this location."""
-        return random.choice(self.events)
-    
-    def mark_visited(self):
-        """Mark the location as visited."""
-        self.visited = True
-    
-    def can_scavenge(self):
-        """Check if the location can be scavenged."""
-        return not self.scavenged
-    
-    def scavenge(self, character: Character) -> Tuple[str, bool]:
-        """Scavenge the location for resources."""
-        if self.scavenged:
-            return "You've already picked this area clean.", False
-        
-        self.scavenged = True
-        
-        # Use dexterity for scavenging success chance
-        success_chance = 40 + character.dexterity.value * 5
-        if random.randint(1, 100) <= success_chance:
-            # Determine what the player finds
-            items = [
-                "Scrap Metal", "Spare Parts", "Copper Wire", 
-                "Rusty Gear", "Steam Valve", "Boiler Plate", "Brass Fitting"
-            ]
-            found_item = random.choice(items)
-            character.add_to_inventory(found_item)
-            
-            # Chance to find something special
-            if random.randint(1, 10) == 1:
-                special_items = ["Repair Kit", "Steam Tonic", "Engineer's Tools"]
-                special_item = random.choice(special_items)
-                character.add_to_inventory(special_item)
-                return f"You found {found_item} and a rare {special_item}!", True
-            
-            return f"You found some useful {found_item}.", True
-        else:
-            return "You search but find nothing of value.", False
-
-class UserInputParser:
-    """Handles user input parsing."""
-    def parse(self, prompt):
-        """Get input from the user with the given prompt."""
-        return input(prompt)
-
-    def select_party_member(self, party):
-        """Let the user select a party member."""
-        if not party:
-            print("No party members left!")
-            return None
-            
-        print("Choose a party member:")
-        for idx, member in enumerate(party):
-            print(f"{idx + 1}. {member}")
-            
-        while True:
-            try:
-                choice = int(self.parse("Enter the number of the chosen party member: ")) - 1
-                if 0 <= choice < len(party):
-                    return party[choice]
-                print("Invalid choice. Try again.")
-            except ValueError:
-                print("Please enter a valid number.")
-    
-    def select_stat(self, character):
-        """Let the user select a character statistic."""
-        print(f"Choose a stat for {character.name}:")
-        stats = character.get_stats()
-        for idx, stat in enumerate(stats):
-            print(f"{idx + 1}. {stat}")
-            
-        while True:
-            try:
-                choice = int(self.parse("Enter the number of the stat to use: ")) - 1
-                if 0 <= choice < len(stats):
-                    return stats[choice]
-                print("Invalid choice. Try again.")
-            except ValueError:
-                print("Please enter a valid number.")
-
-    def select_from_inventory(self, character):
-        """Let the user select an item from inventory."""
-        if not character.inventory:
-            print(f"{character.name} has no items!")
-            return None
-            
-        print(f"Select an item from {character.name}'s inventory:")
-        for idx, item in enumerate(character.inventory):
-            print(f"{idx + 1}. {item}")
-            
-        while True:
-            try:
-                choice = int(self.parse("Enter the item number (0 to cancel): "))
-                if choice == 0:
-                    return None
-                if 1 <= choice <= len(character.inventory):
-                    return character.inventory[choice - 1]
-                print("Invalid choice. Try again.")
-            except ValueError:
-                print("Please enter a valid number.")
+__all__ = ['Character', 'Event', 'EventStatus', 'Location', 'UserInputParser', 'Game', 'load_events_from_json']
 
 class Game:
     """Main game controller class."""
@@ -140,6 +74,7 @@ class Game:
         self.core_fragments = 0
         self.continue_playing = True
         self.day = 1
+        self.airship_repaired = False
         self.special_items = {
             "Repair Kit": self._use_repair_kit,
             "Steam Tonic": self._use_steam_tonic,
@@ -148,14 +83,31 @@ class Game:
             "Steam Pistol": self._use_steam_pistol,
             "Goggles": self._use_goggles
         }
-        self.airship_repaired = False
+        
+        # Apply adventure system enhancements if available
+        if HAS_ADVENTURE_SYSTEM:
+            # Reset repair system
+            RepairSystem.reset_repairs()
+            
+            # Save original methods before enhancement
+            self._scavenge_original = getattr(self, "_scavenge_location", None)
+            
+            # Enhance with scavenging system
+            enhanced_game = enhance_game_with_scavenging(self)
+            if hasattr(enhanced_game, "_scavenge_location"):
+                self._scavenge_location = enhanced_game._scavenge_location
+            
+            # Enhance with repair system - store enhanced method with a different name
+            enhanced_game = enhance_game_with_repairs(self)
+            if hasattr(enhanced_game, "_repair_airship") and enhanced_game._repair_airship != self._repair_airship:
+                self._enhanced_repair_airship = enhanced_game._repair_airship
 
     def start(self):
         """Start the game loop."""
-        self._print_intro()
+        print_game_intro()
         
         while self.continue_playing:
-            self._print_status()
+            print_game_status(self)
             
             # Daily choice menu
             print("\nWhat would you like to do today?")
@@ -184,7 +136,7 @@ class Game:
             
             # Check for game over conditions
             if self.check_game_over():
-                self._print_defeat(self.core_fragments >= 3)
+                print_defeat(self.core_fragments >= 3)
                 self.continue_playing = False
                 continue
                 
@@ -199,6 +151,10 @@ class Game:
         location = self._select_location()
         if not location:
             return
+            
+        # Add enhanced scavenging if adventure system is available
+        if HAS_ADVENTURE_SYSTEM:
+            location = add_scavenging_to_location(location)
             
         print(f"\nTraveling to {location.name}...")
         print(location.description)
@@ -226,13 +182,16 @@ class Game:
                     return
                     
             elif choice == "2":
-                # Scavenge for resources
-                character = self.parser.select_party_member(self.party)
-                if not character:
-                    continue
-                    
-                message, success = location.scavenge(character)
-                print(message)
+                # Use the enhanced scavenging if available
+                if hasattr(self, "_scavenge_location"):
+                    self._scavenge_location(location)
+                else:
+                    character = self.parser.select_party_member(self.party)
+                    if not character:
+                        continue
+                        
+                    message, success = location.scavenge(character)
+                    print(message)
                 
             elif choice == "3":
                 # Return to camp
@@ -290,6 +249,12 @@ class Game:
     
     def _repair_airship(self):
         """Work on repairing the airship."""
+        # Use the enhanced repair system if available
+        if hasattr(self, "_enhanced_repair_airship"):
+            self._enhanced_repair_airship()
+            return
+        
+        # Original simple repair logic
         if self.airship_repaired:
             print("The airship is already repaired and ready to fly!")
             return
@@ -361,9 +326,9 @@ class Game:
         
         victory = boss_event.execute(self.party, self.parser)
         if victory:
-            self._print_victory()
+            print_victory()
         else:
-            self._print_defeat(True)
+            print_defeat(True)
             
         self.continue_playing = False
             
@@ -414,41 +379,6 @@ class Game:
         # This would normally set a flag for improved scavenging
         character.dexterity.modify(1)
         # Don't remove the item as it can be used repeatedly
-    
-    def _print_intro(self):
-        """Print game introduction."""
-        print("""
-        ===============================================
-        CANYON OF THE LOST ENGINES
-        ===============================================
-        In this steampunk-Western canyon, you must collect 3 Core Fragments from ancient wrecks
-        to power an airship and escape. Beware the Iron Phantom!
-        
-        Use Strength for combat, Dexterity for loot, and Intelligence for puzzles.
-        Keep your vitality high to survive!
-        
-        You'll need to:
-        - Explore the canyon's locations
-        - Scavenge for resources
-        - Rest to recover vitality
-        - Repair the airship
-        - Collect 3 Core Fragments
-        - Defeat the Iron Phantom
-        ===============================================
-        """)
-
-    def _print_status(self):
-        """Print current game status."""
-        print(f"\n==== STATUS: Day {self.day} ====")
-        print(f"Core Fragments: {self.core_fragments}/3")
-        print(f"Airship Repair: {'Complete!' if self.airship_repaired else 'Incomplete'}")
-        print("\nParty Members:")
-        for member in self.party:
-            print(f"- {member}")
-            if member.inventory:
-                inv_list = ", ".join(member.inventory)
-                print(f"  Inventory: {inv_list}")
-        print("===============")
 
     def _select_location(self):
         """Let player select a location to visit."""
@@ -469,120 +399,22 @@ class Game:
                 print("Invalid choice. Try again.")
             except ValueError:
                 print("Please enter a valid number.")
-    
-    def _get_continue_choice(self):
-        """Ask if player wants to continue."""
-        print("\nContinue exploring the canyon?")
-        print("1. Yes")
-        print("2. No (End Game)")
-        
-        while True:
-            choice = self.parser.parse("> ")
-            if choice in ["1", "2"]:
-                break
-            print("Invalid choice. Try again.")
-        
-        if choice == "2":
-            print("\nYou decide to give up on your quest. The canyon claims another victim.")
-            return False
-        return True
-    
-    def _print_victory(self):
-        """Print victory message."""
-        print("""
-        ===============================================
-        VICTORY!
-        ===============================================
-        With the Iron Phantom defeated and the Core Fragments installed,
-        the ancient airship roars to life! You escape the canyon,
-        soaring into the sunset toward new adventures.
-        
-        Thank you for playing Canyon of the Lost Engines!
-        ===============================================
-        """)
-    
-    def _print_defeat(self, with_fragments):
-        """Print defeat message."""
-        message = ("The Iron Phantom was too powerful. Your quest ends here,\n"
-                  "your bones to be picked clean by the canyon scavengers." 
-                  if with_fragments else 
-                  "Your party perished before collecting enough Core Fragments.\n"
-                  "The canyon claims another group of adventurers.")
-        
-        print(f"""
-        ===============================================
-        DEFEAT
-        ===============================================
-        {message}
-        
-        Better luck next time!
-        ===============================================
-        """)
 
     def check_game_over(self):
         """Check if the game is over (party wiped out)."""
         return len(self.party) == 0
-
-def load_events_from_json(file_path):
-    """Load events from a JSON file."""
-    try:
-        with open(file_path, 'r') as file:
-            data = json.load(file)
-        return [Event(event_data) for event_data in data]
-    except Exception as e:
-        print(f"Error loading events from {file_path}: {e}")
-        return []
 
 def start_game():
     """Initialize and start the game."""
     # Initialize parser
     parser = UserInputParser()
     
-    # Character creation
-    print("=== CHARACTER CREATION ===")
-    class_options = {
-        "1": "Scrapper", 
-        "2": "Gearshot", 
-        "3": "Steamwright", 
-        "4": "Rustblade"
-    }
-    
-    print("Choose your starting class:")
-    print("1. Scrapper (Balanced STR/DEX/VIT/INT)")
-    print("2. Gearshot (High DEX, Low STR)")
-    print("3. Steamwright (High INT, Medium STR)")
-    print("4. Rustblade (High STR, Low DEX)")
-    
-    # Get class choice
-    class_choice = ""
-    while class_choice not in class_options:
-        class_choice = parser.parse("> ")
-        if class_choice not in class_options:
-            print("Invalid choice. Try again.")
-    
-    name = parser.parse("Enter your character's name: ")
-    
     # Create character
-    character = Character(name, class_options[class_choice])
-    print(f"\nCharacter created: {character}")
+    character = create_character(parser)
     
-    # Create locations with events
     try:
         # Load all locations
-        locations = []
-        location_data = [
-            ("Rusted Titan", 'project_code/location_events/rusted_titan.json', 
-             "A massive mechanical giant, long dormant, its metallic hull half-buried in sand."),
-            ("Boiler Gulch", 'project_code/location_events/boiler_gulch.json',
-             "A narrow ravine where scalding geysers erupt at irregular intervals."),
-            ("Smokestack Spire", 'project_code/location_events/smokestack_spire.json',
-             "A towering column of metal with several broken steam vents still billowing."),
-        ]
-        
-        for name, path, desc in location_data:
-            events = load_events_from_json(path)
-            if events:  # Only add location if it has events
-                locations.append(Location(name, events, desc))
+        locations = load_game_locations()
         
         if not locations:
             print("Error: No locations could be loaded. Check your event files.")
